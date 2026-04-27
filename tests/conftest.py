@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from app.db.session import Base, get_db
 from app.main import app
 from app.models.user import Role, User
+from app.models.property import Client, Property
 from app.core.security import hash_password
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared&uri=true"
@@ -52,6 +53,19 @@ async def seeded_db(db_session):
     if (await db_session.execute(select(User).where(User.email == "supervisor@test.com"))).scalar_one_or_none() is None:
         db_session.add(User(email="supervisor@test.com", full_name="Test Supervisor", hashed_password=hash_password("Test@1234!"), role="supervisor"))
     await db_session.commit()
+
+    # Seed a client and property for work-order tests
+    client_res = await db_session.execute(select(Client).where(Client.full_name == "Test Client"))
+    if client_res.scalar_one_or_none() is None:
+        test_client = Client(full_name="Test Client", email="testclient@test.com")
+        db_session.add(test_client)
+        await db_session.flush()
+        db_session.add(Property(
+            client_id=test_client.id,
+            address="123 Test Street",
+            zone="north",
+        ))
+    await db_session.commit()
     yield db_session
 
 
@@ -67,3 +81,4 @@ async def client(db_engine, seeded_db):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
+

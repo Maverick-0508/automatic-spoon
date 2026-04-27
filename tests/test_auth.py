@@ -40,3 +40,38 @@ async def test_me(client):
 async def test_me_no_token(client):
     resp = await client.get("/api/auth/me")
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_refresh_tokens(client):
+    login = await client.post("/api/auth/login/json", json={"email": "admin@test.com", "password": "Test@1234!"})
+    assert login.status_code == 200
+    refresh_token = login.json()["refresh_token"]
+
+    resp = await client.post(f"/api/auth/refresh?refresh_token={refresh_token}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "access_token" in body
+    assert "refresh_token" in body
+    # Original token should now be revoked
+    resp2 = await client.post(f"/api/auth/refresh?refresh_token={refresh_token}")
+    assert resp2.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_logout(client):
+    login = await client.post("/api/auth/login/json", json={"email": "admin@test.com", "password": "Test@1234!"})
+    assert login.status_code == 200
+    access_token = login.json()["access_token"]
+    refresh_token = login.json()["refresh_token"]
+
+    resp = await client.post(
+        f"/api/auth/logout?refresh_token={refresh_token}",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert resp.status_code == 204
+
+    # Token should be revoked now
+    resp2 = await client.post(f"/api/auth/refresh?refresh_token={refresh_token}")
+    assert resp2.status_code == 401
+

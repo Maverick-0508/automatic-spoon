@@ -46,7 +46,7 @@ async def _async_sla_check():
         result = await db.execute(
             select(SlaTimer).where(
                 SlaTimer.deadline_at <= now,
-                SlaTimer.breached == False,
+                SlaTimer.breached.is_(False),
             )
         )
         timers = result.scalars().all()

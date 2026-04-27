@@ -82,7 +82,7 @@ async def refresh_tokens(
     result = await db.execute(
         select(RefreshToken).where(
             RefreshToken.token_hash == token_h,
-            RefreshToken.revoked == False,
+            RefreshToken.revoked.is_(False),
         )
     )
     db_rt = result.scalar_one_or_none()
@@ -109,6 +109,25 @@ async def refresh_tokens(
     await db.commit()
 
     return TokenResponse(access_token=new_access, refresh_token=new_refresh)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    refresh_token: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    token_h = _token_hash(refresh_token)
+    result = await db.execute(
+        select(RefreshToken).where(
+            RefreshToken.token_hash == token_h,
+            RefreshToken.revoked.is_(False),
+        )
+    )
+    db_rt = result.scalar_one_or_none()
+    if db_rt is not None:
+        db_rt.revoked = True
+        await db.commit()
 
 
 @router.get("/me", response_model=MeResponse)
