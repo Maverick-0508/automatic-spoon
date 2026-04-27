@@ -11,7 +11,7 @@ from app.main import app
 from app.models.user import Role, User
 from app.core.security import hash_password
 
-TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+TEST_DATABASE_URL = "sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared&uri=true"
 
 
 @pytest.fixture(scope="session")

@@ -5,7 +5,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 
 from app.api.deps import require_roles
 from app.db.session import get_db
@@ -135,7 +135,17 @@ async def get_queue(
         select(WorkOrder, Property)
         .join(Property, WorkOrder.property_id == Property.id)
         .where(WorkOrder.status.in_(["open", "in_progress"]))
-        .order_by(WorkOrder.due_at.asc().nullsfirst(), WorkOrder.priority.desc())
+        .order_by(
+            WorkOrder.due_at.asc().nullsfirst(),
+            # Map priority strings to numeric severity for correct ordering
+            case(
+                (WorkOrder.priority == "critical", 1),
+                (WorkOrder.priority == "high", 2),
+                (WorkOrder.priority == "normal", 3),
+                (WorkOrder.priority == "low", 4),
+                else_=5,
+            ).asc(),
+        )
         .limit(limit)
     )
     rows = result.all()
