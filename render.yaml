@@ -2,7 +2,6 @@ services:
   - type: web
     name: lawncraft-api
     env: python
-    pythonVersion: 3.12
     region: oregon
     plan: starter
     branch: main
@@ -34,7 +33,6 @@ services:
   - type: worker
     name: lawncraft-worker
     env: python
-    pythonVersion: 3.12
     region: oregon
     plan: starter
     branch: main
