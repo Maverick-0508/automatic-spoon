@@ -6,16 +6,14 @@ services:
     region: oregon
     plan: starter
     branch: main
-    buildCommand: "pip install -r requirements.txt && alembic -c migrations/alembic.ini upgrade head"
-    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "alembic -c migrations/alembic.ini upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     autoDeploy: true
     envVars:
       - key: APP_ENV
         value: production
       - key: DATABASE_URL
-        fromDatabase:
-          name: lawncraft-db
-          property: connectionString
+        sync: false
       - key: REDIS_URL
         fromService:
           name: lawncraft-redis
@@ -46,9 +44,7 @@ services:
       - key: APP_ENV
         value: production
       - key: DATABASE_URL
-        fromDatabase:
-          name: lawncraft-db
-          property: connectionString
+        sync: false
       - key: REDIS_URL
         fromService:
           name: lawncraft-redis
@@ -56,11 +52,6 @@ services:
           property: connectionString
 
 databases:
-  - name: lawncraft-db
-    databaseName: lawncraft
-    user: lawncraft
-    plan: starter
-
   - name: lawncraft-redis
     type: redis
     plan: starter
