@@ -43,7 +43,7 @@ app.include_router(auth.router)
 app.include_router(supervisor.router)
 
 
-@app.get("/", tags=["meta"])
+@app.api_route("/", methods=["GET", "HEAD"], tags=["meta"])
 async def root():
     return {
         "service": "LawnCraft Supervisor API",
