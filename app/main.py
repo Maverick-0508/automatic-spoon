@@ -43,6 +43,19 @@ app.include_router(auth.router)
 app.include_router(supervisor.router)
 
 
+@app.get("/", tags=["meta"])
+async def root():
+    return {
+        "service": "LawnCraft Supervisor API",
+        "status": "ok",
+        "env": settings.APP_ENV,
+        "health": {
+            "live": "/health/live",
+            "ready": "/health/ready",
+        },
+    }
+
+
 @app.get("/health/live", tags=["health"])
 async def health_live():
     return {"status": "ok"}
