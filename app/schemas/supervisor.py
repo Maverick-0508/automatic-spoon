@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 
 class WorkOrderCreate(BaseModel):
-    property_id: str
+    client_id: int
     title: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
     priority: str = Field("normal", pattern="^(critical|high|normal|low)$")
@@ -32,8 +32,8 @@ class WorkOrderAssign(BaseModel):
 
 
 class WorkOrderResponse(BaseModel):
-    id: str
-    property_id: str
+    id: int
+    client_id: int
     title: str
     description: Optional[str]
     status: str
@@ -66,7 +66,7 @@ class StatsTrendsResponse(BaseModel):
 
 
 class QueueItem(BaseModel):
-    id: str
+    id: int
     title: str
     status: str
     priority: str
@@ -82,7 +82,7 @@ class QueueResponse(BaseModel):
 
 
 class PlanningItem(BaseModel):
-    id: str
+    id: int
     title: str
     status: str
     priority: str
@@ -107,7 +107,7 @@ class ActiveResponse(BaseModel):
 
 
 class ExceptionItem(BaseModel):
-    id: str
+    id: int
     title: str
     reason: str
     priority: str
