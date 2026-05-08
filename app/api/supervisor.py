@@ -136,7 +136,8 @@ async def get_queue(
 ):
     result = await db.execute(
         select(WorkOrder, Property)
-        .join(Property, WorkOrder.property_id == Property.id)
+        .join(Client, WorkOrder.client_id == Client.id)
+        .join(Property, Property.client_id == Client.id)
         .where(WorkOrder.status.in_(["open", "in_progress"]))
         .order_by(
             WorkOrder.due_at.asc().nullsfirst(),
@@ -367,14 +368,14 @@ async def get_property(
 
     open_orders = (await db.execute(
         select(func.count()).select_from(WorkOrder).where(
-            WorkOrder.property_id == prop.id,
+            WorkOrder.client_id == prop.client_id,
             WorkOrder.status.in_(["open", "in_progress"]),
         )
     )).scalar_one()
 
     last_svc_result = await db.execute(
         select(func.max(WorkOrder.updated_at)).where(
-            WorkOrder.property_id == prop.id,
+            WorkOrder.client_id == prop.client_id,
             WorkOrder.status == "completed",
         )
     )
@@ -396,11 +397,11 @@ async def create_work_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = _auth,
 ):
-    # Validate property exists
-    prop_res = await db.execute(select(Property).where(Property.id == payload.property_id))
-    if prop_res.scalar_one_or_none() is None:
+    # Validate client exists
+    client_res = await db.execute(select(Client).where(Client.id == payload.client_id))
+    if client_res.scalar_one_or_none() is None:
         from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="Property not found")
+        raise HTTPException(status_code=404, detail="Client not found")
 
     # Validate assignee exists if provided
     if payload.assigned_to:
@@ -410,7 +411,7 @@ async def create_work_order(
             raise HTTPException(status_code=404, detail="Assigned user not found")
 
     wo = WorkOrder(
-        property_id=payload.property_id,
+        client_id=payload.client_id,
         title=payload.title,
         description=payload.description,
         priority=payload.priority,
@@ -442,7 +443,7 @@ async def create_work_order(
     await db.refresh(wo)
     return WorkOrderResponse(
         id=wo.id,
-        property_id=wo.property_id,
+        client_id=wo.client_id,
         title=wo.title,
         description=wo.description,
         status=wo.status,
@@ -458,7 +459,7 @@ async def create_work_order(
 
 @router.patch("/work-orders/{work_order_id}", response_model=WorkOrderResponse)
 async def update_work_order(
-    work_order_id: str,
+    work_order_id: int,
     payload: WorkOrderUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = _auth,
@@ -494,7 +495,7 @@ async def update_work_order(
     await db.refresh(wo)
     return WorkOrderResponse(
         id=wo.id,
-        property_id=wo.property_id,
+        client_id=wo.client_id,
         title=wo.title,
         description=wo.description,
         status=wo.status,
@@ -510,7 +511,7 @@ async def update_work_order(
 
 @router.post("/work-orders/{work_order_id}/assign", response_model=WorkOrderResponse)
 async def assign_work_order(
-    work_order_id: str,
+    work_order_id: int,
     payload: WorkOrderAssign,
     db: AsyncSession = Depends(get_db),
     current_user: User = _auth,
@@ -564,7 +565,7 @@ async def assign_work_order(
     await db.refresh(wo)
     return WorkOrderResponse(
         id=wo.id,
-        property_id=wo.property_id,
+        client_id=wo.client_id,
         title=wo.title,
         description=wo.description,
         status=wo.status,
@@ -580,7 +581,7 @@ async def assign_work_order(
 
 @router.post("/work-orders/{work_order_id}/complete", response_model=WorkOrderResponse)
 async def complete_work_order(
-    work_order_id: str,
+    work_order_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = _auth,
 ):
@@ -626,7 +627,7 @@ async def complete_work_order(
     await db.refresh(wo)
     return WorkOrderResponse(
         id=wo.id,
-        property_id=wo.property_id,
+        client_id=wo.client_id,
         title=wo.title,
         description=wo.description,
         status=wo.status,
