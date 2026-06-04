@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from app.models.property import Client, Property
+from app.models.work_order import WorkOrderEvent, AuditLog
 
 
 async def get_admin_token(client) -> str:
@@ -32,6 +33,59 @@ async def test_create_work_order(client, seeded_db):
     assert body["status"] == "open"
     assert body["priority"] == "normal"
     assert body["client_id"] == client_id
+
+
+@pytest.mark.asyncio
+async def test_create_quote_work_order_sends_detailed_email(client, seeded_db, monkeypatch):
+    token = await get_admin_token(client)
+    client_id = await get_test_client_id(seeded_db)
+
+    sent = {}
+
+    def fake_send_quote_email(*, to_email, subject, text_body, html_body, attachment_filename, attachment_bytes):
+        sent["to_email"] = to_email
+        sent["subject"] = subject
+        sent["text_body"] = text_body
+        sent["html_body"] = html_body
+        sent["attachment_filename"] = attachment_filename
+        sent["attachment_bytes"] = attachment_bytes
+
+    monkeypatch.setattr("app.api.supervisor.send_quote_email", fake_send_quote_email)
+
+    resp = await client.post(
+        "/api/supervisor/work-orders",
+        json={
+            "client_id": client_id,
+            "title": "Weekly maintenance request",
+            "description": "- Mow front lawn\n- Edge driveway and sidewalks\n- Trim shrubs\n- Blow hard surfaces clear",
+            "priority": "high",
+            "quote": True,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 201
+    assert sent["to_email"] == "testclient@test.com"
+    assert sent["subject"] == "Detailed quote for Weekly maintenance request"
+    assert "LawnCraft Detailed Quote" in sent["text_body"]
+    assert "Task Breakdown" in sent["text_body"]
+    assert "1. Mow front lawn" in sent["text_body"]
+    assert "2. Edge driveway and sidewalks" in sent["text_body"]
+    assert "3. Trim shrubs" in sent["text_body"]
+    assert "4. Blow hard surfaces clear" in sent["text_body"]
+    assert "<html" in sent["html_body"].lower()
+    assert sent["attachment_filename"].endswith(".pdf")
+    assert sent["attachment_bytes"].startswith(b"%PDF")
+
+    event_result = await seeded_db.execute(
+        select(WorkOrderEvent).where(WorkOrderEvent.event_type == "quote_sent")
+    )
+    assert event_result.scalar_one_or_none() is not None
+
+    audit_result = await seeded_db.execute(
+        select(AuditLog).where(AuditLog.action == "quote.sent")
+    )
+    assert audit_result.scalar_one_or_none() is not None
 
 
 @pytest.mark.asyncio
