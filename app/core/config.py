@@ -25,9 +25,20 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     SENTRY_DSN: str = ""
 
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_USE_TLS: bool = True
+    QUOTE_FROM_EMAIL: str = ""
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [o.strip() for o in self.CORS_ALLOWED_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def quote_from_email(self) -> str:
+        return self.QUOTE_FROM_EMAIL or self.SMTP_USERNAME or "noreply@lawncraft.local"
 
 
 @lru_cache
