@@ -12,6 +12,8 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.work_order import WorkOrder, SlaTimer, WorkOrderEvent, Assignment, AuditLog
 from app.models.property import Property, Client
+from app.services.email_service import send_quote_email
+from app.services.quote_service import build_quote_package, is_quote_request
 from app.schemas.supervisor import (
     ActiveResponse,
     ActiveWorker,
@@ -399,7 +401,8 @@ async def create_work_order(
 ):
     # Validate client exists
     client_res = await db.execute(select(Client).where(Client.id == payload.client_id))
-    if client_res.scalar_one_or_none() is None:
+    client = client_res.scalar_one_or_none()
+    if client is None:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Client not found")
 
@@ -409,6 +412,12 @@ async def create_work_order(
         if user_res.scalar_one_or_none() is None:
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Assigned user not found")
+
+    # Prefer explicit request flag; fallback to keyword detection when not provided
+    quote_requested = payload.quote if getattr(payload, "quote", None) is not None else is_quote_request(payload.title, payload.description)
+    if quote_requested and not client.email:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Client email is required to send a quote")
 
     wo = WorkOrder(
         client_id=payload.client_id,
@@ -441,6 +450,48 @@ async def create_work_order(
 
     await db.commit()
     await db.refresh(wo)
+
+    if quote_requested:
+        property_res = await db.execute(
+            select(Property)
+            .where(Property.client_id == client.id)
+            .order_by(Property.created_at.asc())
+            .limit(1)
+        )
+        quote_property = property_res.scalar_one_or_none()
+        quote_package = build_quote_package(client=client, property=quote_property, work_order=wo)
+
+        try:
+            send_quote_email(
+                to_email=client.email,
+                subject=f"Detailed quote for {wo.title}",
+                text_body=quote_package.text_body,
+                html_body=quote_package.html_body,
+                attachment_filename=quote_package.pdf_filename,
+                attachment_bytes=quote_package.pdf_bytes,
+            )
+        except Exception as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=502, detail=f"Quote email delivery failed: {exc}")
+
+        quote_event = WorkOrderEvent(
+            work_order_id=wo.id,
+            actor_id=current_user.id,
+            event_type="quote_sent",
+            payload=f'{{"recipient": "{client.email}", "attachment": "{quote_package.pdf_filename}"}}',
+        )
+        db.add(quote_event)
+
+        quote_audit = AuditLog(
+            actor_id=current_user.id,
+            action="quote.sent",
+            resource_type="work_order",
+            resource_id=wo.id,
+            detail=f"sent to {client.email} with {quote_package.pdf_filename}",
+        )
+        db.add(quote_audit)
+        await db.commit()
+
     return WorkOrderResponse(
         id=wo.id,
         client_id=wo.client_id,
