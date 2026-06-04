@@ -13,6 +13,7 @@ class WorkOrderCreate(BaseModel):
     priority: str = Field("normal", pattern="^(critical|high|normal|low)$")
     zone: Optional[str] = None
     assigned_to: Optional[str] = None
+    quote: Optional[bool] = None
     due_at: Optional[datetime] = None
     next_action_at: Optional[datetime] = None
 
