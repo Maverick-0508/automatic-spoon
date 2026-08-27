@@ -6,6 +6,7 @@ import { supervisorRouter } from './src/routes/supervisor.js';
 import { contactRouter } from './src/routes/contact.js';
 import { quotesRouter } from './src/routes/quotes.js';
 import { db } from './src/db.js';
+import { getFirebaseConfig } from './src/firebase.js';
 
 dotenv.config();
 
@@ -13,9 +14,24 @@ const app = express();
 const PORT = 3000;
 const APP_ENV = process.env.APP_ENV || 'development';
 
-// Middleware
+// Dynamic CORS Middleware supporting any origin with credentials
+app.use((req, res, next) => {
+  const origin = req.headers.origin || '*';
+  res.header('Access-Control-Allow-Origin', origin);
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-CSRFToken, x-access-token');
+  res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Type, Authorization, Set-Cookie');
+
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(204);
+    return;
+  }
+  next();
+});
+
 app.use(cors({
-  origin: '*',
+  origin: true,
   credentials: true,
 }));
 app.use(express.json());
@@ -37,30 +53,66 @@ app.use((req, res, next) => {
 });
 
 // Consumer-facing endpoints (companion site / friendly-telegram compatibility)
-app.use('/api/contact', contactRouter);
-app.use('/contact', contactRouter);
-app.use('/api/quotes', quotesRouter);
-app.use('/quotes', quotesRouter);
+app.use(['/api/contact', '/contact', '/api/v1/contact', '/v1/contact'], contactRouter);
+app.use(['/api/quotes', '/quotes', '/api/v1/quotes', '/v1/quotes'], quotesRouter);
 
-// Supervisor & Auth Routers
-app.use('/api/auth', authRouter);
-app.use('/auth', authRouter);
-app.use('/api/login', authRouter);
-app.use('/login', authRouter);
-app.use('/api/token', authRouter);
-app.use('/token', authRouter);
-app.use('/api/supervisor', supervisorRouter);
+// Supervisor & Auth Routers (all path combinations)
+app.use([
+  '/api/auth',
+  '/auth',
+  '/api/v1/auth',
+  '/v1/auth',
+  '/api/login',
+  '/login',
+  '/api/v1/login',
+  '/v1/login',
+  '/api/token',
+  '/token',
+  '/api/v1/token',
+  '/v1/token',
+  '/api/jwt',
+  '/jwt',
+  '/api/v1/jwt',
+  '/v1/jwt',
+  '/api/users',
+  '/users',
+  '/api/user',
+  '/user',
+  '/api/me',
+  '/me',
+  '/api/supervisor/login',
+  '/supervisor/login'
+], authRouter);
 
-// Root route
-app.get('/', (req: Request, res: Response): void => {
-  if (req.accepts('html') && !req.accepts('json')) {
-    res.setHeader('Content-Type', 'text/html');
-    res.send(`<!DOCTYPE html>
+app.use(['/api/supervisor', '/supervisor', '/api/v1/supervisor', '/v1/supervisor'], supervisorRouter);
+
+// Public Firebase config
+app.get(['/api/firebase-config', '/firebase-config'], (req: Request, res: Response): void => {
+  res.json(getFirebaseConfig());
+});
+
+// Render the interactive Supervisor & Dispatch Portal
+function renderPortalHtml(req: Request, res: Response) {
+  const fbConfig = getFirebaseConfig();
+  res.setHeader('Content-Type', 'text/html');
+  res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LawnCraft Supervisor & Dispatch API Hub</title>
+  <title>LawnCraft Supervisor & Dispatch Hub</title>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getAuth, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+    const firebaseConfig = ${JSON.stringify(fbConfig)};
+    window.fbApp = initializeApp(firebaseConfig);
+    window.fbAuth = getAuth(window.fbApp);
+    window.GoogleAuthProvider = GoogleAuthProvider;
+    window.signInWithPopup = signInWithPopup;
+    window.signInWithEmailAndPassword = signInWithEmailAndPassword;
+    console.log("Firebase initialized for project:", firebaseConfig.projectId);
+  </script>
   <style>
     :root {
       --bg: #0b1320;
@@ -77,46 +129,68 @@ app.get('/', (req: Request, res: Response): void => {
     }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background: var(--bg); color: var(--text); padding: 1.5rem; line-height: 1.5; }
-    .container { max-width: 1100px; margin: 0 auto; }
+    .container { max-width: 1140px; margin: 0 auto; }
     .header { margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
     .title { font-size: 1.6rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 0.5rem; }
     .badge { background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 0.25rem 0.65rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; }
+    
+    .auth-banner { background: #111d30; border: 1px solid var(--border); border-radius: 0.6rem; padding: 0.75rem 1rem; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem; }
+    .auth-user-info { display: flex; align-items: center; gap: 0.75rem; font-size: 0.9rem; }
+    .auth-badge { padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; background: rgba(56, 189, 248, 0.2); color: var(--accent); }
+
     .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
     .kpi-card { background: var(--card); border: 1px solid var(--border); border-radius: 0.6rem; padding: 1rem; text-align: center; }
     .kpi-val { font-size: 1.8rem; font-weight: 800; color: var(--accent); margin-top: 0.2rem; }
     .kpi-label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+    
     .tabs { display: flex; gap: 0.5rem; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; overflow-x: auto; }
-    .tab-btn { background: transparent; border: none; color: var(--text-muted); padding: 0.6rem 1.1rem; font-size: 0.95rem; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; }
+    .tab-btn { background: transparent; border: none; color: var(--text-muted); padding: 0.6rem 1.1rem; font-size: 0.95rem; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
     .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
     .tab-pane { display: none; }
     .tab-pane.active { display: block; }
+    
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
     @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+    
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.25rem; margin-bottom: 1.25rem; }
     .card h3 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--accent); display: flex; align-items: center; justify-content: space-between; }
+    
     .form-group { margin-bottom: 0.85rem; }
     .form-group label { display: block; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.3rem; font-weight: 500; }
     .form-group input, .form-group textarea, .form-group select { width: 100%; background: #090e17; border: 1px solid var(--border); border-radius: 0.4rem; padding: 0.55rem 0.75rem; color: #fff; font-size: 0.88rem; outline: none; }
     .form-group input:focus, .form-group textarea:focus { border-color: var(--accent); }
-    .btn { background: var(--primary); color: #fff; border: none; padding: 0.55rem 1rem; border-radius: 0.4rem; font-weight: 600; font-size: 0.88rem; cursor: pointer; transition: background 0.2s; }
+    
+    .btn { background: var(--primary); color: #fff; border: none; padding: 0.55rem 1rem; border-radius: 0.4rem; font-weight: 600; font-size: 0.88rem; cursor: pointer; transition: background 0.2s; display: inline-flex; align-items: center; gap: 0.4rem; }
     .btn:hover { background: var(--primary-hover); }
     .btn-secondary { background: var(--card-alt); border: 1px solid var(--border); color: #cbd5e1; }
     .btn-secondary:hover { background: #25395a; }
     .btn-warning { background: var(--warning); color: #111; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-firebase { background: #ea580c; color: #fff; }
+    .btn-firebase:hover { background: #c2410c; }
     .btn-sm { padding: 0.35rem 0.65rem; font-size: 0.78rem; }
+    
     .table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 0.85rem; }
     .table th, .table td { text-align: left; padding: 0.65rem; border-bottom: 1px solid var(--border); }
     .table th { color: var(--text-muted); font-weight: 600; }
+    
     .method { font-weight: 700; font-size: 0.7rem; padding: 0.15rem 0.4rem; border-radius: 0.2rem; display: inline-block; }
     .get { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
     .post { background: rgba(16, 185, 129, 0.2); color: #34d399; }
     .patch { background: rgba(251, 191, 36, 0.2); color: #fbbf24; }
+    
     .prio-critical { color: var(--danger); font-weight: 700; }
     .prio-high { color: var(--warning); font-weight: 700; }
     .prio-normal { color: #38bdf8; }
     .prio-low { color: #94a3b8; }
+    
     .tag { font-size: 0.75rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--card-alt); border: 1px solid var(--border); }
     .log-box { background: #070b12; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.85rem; font-family: monospace; font-size: 0.8rem; max-height: 220px; overflow-y: auto; color: #a5f3fc; }
+    
+    /* Login Modal */
+    .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 9999; align-items: center; justify-content: center; padding: 1rem; }
+    .modal.active { display: flex; }
+    .modal-content { background: var(--card); border: 1px solid var(--border); border-radius: 0.75rem; max-width: 440px; width: 100%; padding: 1.5rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
   </style>
 </head>
 <body>
@@ -124,11 +198,25 @@ app.get('/', (req: Request, res: Response): void => {
     <div class="header">
       <div>
         <div class="title">🌱 LawnCraft Supervisor Hub <span class="badge">Canonical Node API</span></div>
-        <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.2rem;">Unified backend with consumer <code>/api/contact</code> & <code>/api/quotes</code>, async quote PDF generator, worker dispatch & SLA tracking</p>
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.2rem;">Unified backend with Firebase Auth, consumer <code>/api/contact</code> & <code>/api/quotes</code>, async quote PDF generator, worker dispatch & SLA tracking</p>
       </div>
-      <div style="display: flex; gap: 0.5rem; align-items: center;">
-        <button id="quickLoginBtn" class="btn btn-secondary btn-sm" onclick="loginSupervisor()">⚡ Auth as Admin</button>
+      <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+        <button id="openAuthModalBtn" class="btn btn-secondary btn-sm" onclick="openLoginModal()">🔑 Sign In / Switch Account</button>
         <button class="btn btn-secondary btn-sm" onclick="triggerSlaCheck()">⏱ Run SLA Check</button>
+      </div>
+    </div>
+
+    <!-- Active Authentication Status Banner -->
+    <div class="auth-banner" id="authBanner">
+      <div class="auth-user-info">
+        <span>👤 Signed in as: <strong id="currentUserName">LawnCraft Service Desk</strong></span>
+        <span class="auth-badge" id="currentUserRole">SUPERVISOR</span>
+        <span style="color: var(--text-muted); font-size: 0.8rem;" id="currentUserEmail">(service@lawncraft.com)</span>
+      </div>
+      <div style="display: flex; gap: 0.5rem;">
+        <button class="btn btn-sm btn-secondary" onclick="quickLogin('service@lawncraft.com', 'Supervisor@12345!')">⚡ Service Desk</button>
+        <button class="btn btn-sm btn-secondary" onclick="quickLogin('admin@lawncraft.com', 'Admin@12345!')">⚡ Admin</button>
+        <button class="btn btn-sm btn-secondary" onclick="quickLogin('stunningwaddle@gmail.com', 'Supervisor@12345!')">⚡ Owner Account</button>
       </div>
     </div>
 
@@ -162,6 +250,7 @@ app.get('/', (req: Request, res: Response): void => {
       <button class="tab-btn" onclick="switchTab('consumerTab', this)">📬 Consumer Forms (Contact & Quotes)</button>
       <button class="tab-btn" onclick="switchTab('clientsTab', this)">👥 Clients & Properties</button>
       <button class="tab-btn" onclick="switchTab('jobsTab', this)">⚡ Async Background Queue</button>
+      <button class="tab-btn" onclick="switchTab('firebaseTab', this)">🔥 Firebase Auth & Sync</button>
       <button class="tab-btn" onclick="switchTab('apiTab', this)">📚 API Specification</button>
     </div>
 
@@ -266,18 +355,18 @@ app.get('/', (req: Request, res: Response): void => {
     <div id="clientsTab" class="tab-pane">
       <div class="card">
         <h3>
-          <span>Client Database (<code>/api/supervisor/clients</code>)</span>
-          <button class="btn btn-sm" onclick="loadClients()">↻ Refresh</button>
+          <span>Client Roster & Properties</span>
+          <div style="display: flex; gap: 0.5rem;">
+            <input type="text" id="clientSearch" placeholder="Search name, email, phone..." style="background:#090e17; border:1px solid var(--border); border-radius:4px; padding:0.3rem 0.6rem; color:#fff; font-size:0.8rem; width:220px;" oninput="loadClients()" />
+            <button class="btn btn-sm" onclick="loadClients()">Search</button>
+          </div>
         </h3>
-        <div style="margin-bottom: 1rem; display: flex; gap: 0.5rem;">
-          <input type="text" id="clientSearch" placeholder="Search by name, email, or phone..." oninput="loadClients()" style="background:#090e17; border: 1px solid var(--border); border-radius: 0.4rem; padding: 0.5rem 0.75rem; color:#fff; flex: 1;" />
-        </div>
         <div style="overflow-x: auto;">
-          <table class="table">
+          <table class="table" id="clientsTable">
             <thead>
               <tr>
                 <th>ID</th>
-                <th>Client Name</th>
+                <th>Name</th>
                 <th>Email</th>
                 <th>Phone</th>
                 <th>Properties</th>
@@ -296,90 +385,106 @@ app.get('/', (req: Request, res: Response): void => {
     <div id="jobsTab" class="tab-pane">
       <div class="card">
         <h3>
-          <span>Background Job Queue (<code>/api/supervisor/jobs</code>)</span>
+          <span>Async Job Queue & Worker Status</span>
           <button class="btn btn-sm" onclick="loadJobs()">↻ Refresh Jobs</button>
         </h3>
-        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">Resolves SMTP blocking latency by offloading quote PDF creation & email delivery to async worker queue with exponential retries.</p>
         <div style="overflow-x: auto;">
-          <table class="table">
+          <table class="table" id="jobsTable">
             <thead>
               <tr>
                 <th>Job ID</th>
-                <th>Type</th>
+                <th>Task Type</th>
                 <th>Status</th>
                 <th>Attempts</th>
-                <th>Created At</th>
+                <th>Enqueued At</th>
                 <th>Payload Summary</th>
               </tr>
             </thead>
             <tbody id="jobsTbody">
-              <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Loading jobs...</td></tr>
+              <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Loading job queue...</td></tr>
             </tbody>
           </table>
         </div>
       </div>
     </div>
 
-    <!-- Tab 5: API Specification -->
+    <!-- Tab 5: Firebase Auth & Sync -->
+    <div id="firebaseTab" class="tab-pane">
+      <div class="grid-2">
+        <div class="card">
+          <h3>🔥 Firebase Configuration</h3>
+          <p style="color: var(--text-muted); font-size: 0.82rem; margin-bottom: 0.85rem;">Connected Firebase instance details for Firestore & Auth:</p>
+          <div style="font-size: 0.85rem; line-height: 1.8;">
+            <div><strong>Project ID:</strong> <code>${fbConfig.projectId}</code></div>
+            <div><strong>Auth Domain:</strong> <code>${fbConfig.authDomain}</code></div>
+            <div><strong>App ID:</strong> <code>${fbConfig.appId}</code></div>
+            <div><strong>Database ID:</strong> <code>${fbConfig.firestoreDatabaseId || '(default)'}</code></div>
+          </div>
+          <div style="margin-top: 1.25rem;">
+            <button class="btn btn-firebase" onclick="loginWithGoogleFirebase()">🔥 Sign in with Google (Firebase)</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Token & Session Inspector</h3>
+          <div class="form-group">
+            <label>Current Bearer Access Token</label>
+            <textarea id="tokenDisplay" rows="3" readonly style="font-family: monospace; font-size: 0.75rem;"></textarea>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="verifyTokenLive()">Verify Token with /api/auth/me</button>
+          <pre class="log-box" id="tokenVerifyLog" style="margin-top: 0.75rem;">Click verify to test token validity...</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 6: API Spec -->
     <div id="apiTab" class="tab-pane">
       <div class="card">
-        <h3>Canonical Endpoints Overview</h3>
+        <h3>LawnCraft Supervisor & Consumer API Endpoints</h3>
         <table class="table">
           <thead>
             <tr>
               <th>Method</th>
               <th>Endpoint</th>
               <th>Description</th>
-              <th>Target / Consumers</th>
+              <th>Consumer</th>
             </tr>
           </thead>
           <tbody>
             <tr>
               <td><span class="method post">POST</span></td>
-              <td><code>/api/contact</code> & <code>/contact</code></td>
-              <td>Submit consumer contact inquiry & auto-link client/work order</td>
-              <td>Website (friendly-telegram script.js)</td>
+              <td><code>/api/contact</code> or <code>/contact</code></td>
+              <td>Accept contact submissions from website and dispatch quote tasks</td>
+              <td>Consumer Site</td>
             </tr>
             <tr>
               <td><span class="method post">POST</span></td>
-              <td><code>/api/quotes</code> & <code>/quotes</code></td>
-              <td>Create quote request with async PDF & email generation</td>
-              <td>Website (submitQuoteRequest)</td>
+              <td><code>/api/quotes</code> or <code>/quotes</code></td>
+              <td>Accept detailed quote requests with task breakdown and generate async PDF</td>
+              <td>Consumer Site</td>
             </tr>
             <tr>
               <td><span class="method get">GET</span></td>
               <td><code>/api/quotes/:id/pdf</code></td>
-              <td>Download or inline preview generated quote PDF</td>
-              <td>Public / Client</td>
+              <td>Preview or download generated LawnCraft Quote PDF package</td>
+              <td>Customer / Supervisor</td>
             </tr>
             <tr>
               <td><span class="method post">POST</span></td>
-              <td><code>/api/auth/login/json</code></td>
-              <td>Issue supervisor / admin JWT access & refresh tokens</td>
+              <td><code>/api/auth/login</code> or <code>/api/auth/firebase</code></td>
+              <td>Authenticate supervisor or administrator and issue JWT / Bearer tokens</td>
               <td>Supervisor Portal</td>
             </tr>
             <tr>
               <td><span class="method get">GET</span></td>
               <td><code>/api/supervisor/stats</code></td>
-              <td>Single-pass aggregated operational dashboard metrics</td>
+              <td>Get single-pass aggregated metrics (open, high priority, overdue, technicians)</td>
               <td>Supervisor Portal</td>
             </tr>
             <tr>
               <td><span class="method get">GET</span></td>
-              <td><code>/api/supervisor/queue</code></td>
-              <td>Prioritized work order queue with client and address context</td>
-              <td>Supervisor Portal</td>
-            </tr>
-            <tr>
-              <td><span class="method get">GET</span></td>
-              <td><code>/api/supervisor/clients</code></td>
-              <td>Paginated client list with search query parameter</td>
-              <td>Supervisor Portal</td>
-            </tr>
-            <tr>
-              <td><span class="method get">GET</span></td>
-              <td><code>/api/supervisor/workers</code></td>
-              <td>List active technicians and assigned workload</td>
+              <td><code>/api/supervisor/work-orders</code></td>
+              <td>List and filter work orders with SLA deadlines and assigned technician</td>
               <td>Supervisor Portal</td>
             </tr>
             <tr>
@@ -413,8 +518,57 @@ app.get('/', (req: Request, res: Response): void => {
 
   </div>
 
+  <!-- Sign In / Switch Account Modal -->
+  <div class="modal" id="loginModal">
+    <div class="modal-content">
+      <h3 style="color: var(--accent); margin-bottom: 0.5rem;">Supervisor & Admin Sign In</h3>
+      <p style="color: var(--text-muted); font-size: 0.82rem; margin-bottom: 1rem;">Choose a default supervisor account or sign in with your credentials.</p>
+      
+      <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.25rem;">
+        <button class="btn btn-secondary" onclick="quickLogin('service@lawncraft.com', 'Supervisor@12345!')">
+          🌱 Sign in as Service Desk (service@lawncraft.com)
+        </button>
+        <button class="btn btn-secondary" onclick="quickLogin('admin@lawncraft.com', 'Admin@12345!')">
+          🛡️ Sign in as Admin (admin@lawncraft.com)
+        </button>
+        <button class="btn btn-secondary" onclick="quickLogin('stunningwaddle@gmail.com', 'Supervisor@12345!')">
+          ⭐ Sign in as Primary Owner (stunningwaddle@gmail.com)
+        </button>
+        <button class="btn btn-firebase" onclick="loginWithGoogleFirebase()">
+          🔥 Sign in with Google (Firebase Auth)
+        </button>
+      </div>
+
+      <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 0.5rem;">
+        <form onsubmit="handleManualLogin(event)">
+          <div class="form-group">
+            <label>Email Address</label>
+            <input type="text" id="mEmail" placeholder="e.g. service@lawncraft.com" required />
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="mPassword" placeholder="••••••••••••" required />
+          </div>
+          <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem;">
+            <button type="button" class="btn btn-secondary" onclick="closeLoginModal()">Cancel</button>
+            <button type="submit" class="btn">Sign In</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <script>
-    let authToken = '';
+    let authToken = localStorage.getItem('lc_auth_token') || '';
+    let currentUser = null;
+
+    function openLoginModal() {
+      document.getElementById('loginModal').classList.add('active');
+    }
+
+    function closeLoginModal() {
+      document.getElementById('loginModal').classList.remove('active');
+    }
 
     function switchTab(tabId, el) {
       document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
@@ -424,30 +578,94 @@ app.get('/', (req: Request, res: Response): void => {
       if (tabId === 'queueTab') loadWorkOrders();
       if (tabId === 'clientsTab') loadClients();
       if (tabId === 'jobsTab') loadJobs();
+      if (tabId === 'firebaseTab') updateTokenDisplay();
     }
 
-    async function loginSupervisor() {
+    function updateAuthUI(user, token) {
+      currentUser = user;
+      authToken = token;
+      localStorage.setItem('lc_auth_token', token);
+      if (user) {
+        document.getElementById('currentUserName').innerText = user.full_name || user.fullName || user.email;
+        document.getElementById('currentUserRole').innerText = (user.role || 'supervisor').toUpperCase();
+        document.getElementById('currentUserEmail').innerText = '(' + user.email + ')';
+      }
+      updateTokenDisplay();
+      refreshDashboard();
+    }
+
+    function updateTokenDisplay() {
+      const el = document.getElementById('tokenDisplay');
+      if (el) el.value = authToken || 'No active token';
+    }
+
+    async function quickLogin(email, password) {
       try {
-        const res = await fetch('/api/auth/login/json', {
+        const res = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: 'admin@lawncraft.com', password: 'Admin@12345!' }),
+          body: JSON.stringify({ email, password }),
         });
         const data = await res.json();
-        if (data.access_token) {
-          authToken = data.access_token;
-          document.getElementById('quickLoginBtn').innerText = '✓ Authenticated (Admin)';
-          document.getElementById('quickLoginBtn').style.background = 'rgba(16, 185, 129, 0.2)';
-          document.getElementById('quickLoginBtn').style.color = '#34d399';
-          refreshDashboard();
+        if (data.access_token || data.token) {
+          const tok = data.access_token || data.token;
+          updateAuthUI(data.user, tok);
+          closeLoginModal();
+        } else {
+          alert('Login failed: ' + (data.detail || data.message || 'Invalid credentials'));
         }
       } catch (err) {
-        console.error('Login error:', err);
+        alert('Login error: ' + err.message);
+      }
+    }
+
+    async function handleManualLogin(e) {
+      e.preventDefault();
+      const email = document.getElementById('mEmail').value;
+      const password = document.getElementById('mPassword').value;
+      await quickLogin(email, password);
+    }
+
+    async function loginWithGoogleFirebase() {
+      try {
+        if (!window.fbAuth) {
+          alert('Firebase Auth is initializing, please wait a second and retry.');
+          return;
+        }
+        const provider = new window.GoogleAuthProvider();
+        const result = await window.signInWithPopup(window.fbAuth, provider);
+        const idToken = await result.user.getIdToken();
+        
+        // Exchange with backend
+        const res = await fetch('/api/auth/firebase', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            idToken,
+            email: result.user.email,
+            displayName: result.user.displayName,
+          })
+        });
+        const data = await res.json();
+        if (data.access_token || data.token) {
+          updateAuthUI(data.user, data.access_token || data.token);
+          closeLoginModal();
+          alert('Signed in with Firebase as ' + result.user.email);
+        }
+      } catch (err) {
+        console.error('Firebase Auth Error:', err);
+        alert('Firebase Google Sign-In note: ' + err.message);
+      }
+    }
+
+    async function ensureAuth() {
+      if (!authToken) {
+        await quickLogin('service@lawncraft.com', 'Supervisor@12345!');
       }
     }
 
     async function refreshDashboard() {
-      if (!authToken) await loginSupervisor();
+      if (!authToken) return;
       try {
         const res = await fetch('/api/supervisor/stats', {
           headers: { 'Authorization': 'Bearer ' + authToken }
@@ -465,7 +683,7 @@ app.get('/', (req: Request, res: Response): void => {
     }
 
     async function loadWorkOrders() {
-      if (!authToken) await loginSupervisor();
+      await ensureAuth();
       try {
         const [woRes, workersRes] = await Promise.all([
           fetch('/api/supervisor/work-orders?limit=50', { headers: { 'Authorization': 'Bearer ' + authToken } }),
@@ -528,7 +746,7 @@ app.get('/', (req: Request, res: Response): void => {
 
     async function assignWorker(woId, workerId) {
       if (!workerId) return;
-      if (!authToken) await loginSupervisor();
+      await ensureAuth();
       try {
         const res = await fetch(\`/api/supervisor/work-orders/\${woId}/assign\`, {
           method: 'POST',
@@ -546,7 +764,7 @@ app.get('/', (req: Request, res: Response): void => {
     }
 
     async function completeOrder(woId) {
-      if (!authToken) await loginSupervisor();
+      await ensureAuth();
       try {
         const res = await fetch(\`/api/supervisor/work-orders/\${woId}/complete\`, {
           method: 'POST',
@@ -614,7 +832,7 @@ app.get('/', (req: Request, res: Response): void => {
     }
 
     async function loadClients() {
-      if (!authToken) await loginSupervisor();
+      await ensureAuth();
       const query = document.getElementById('clientSearch')?.value || '';
       try {
         const res = await fetch(\`/api/supervisor/clients?q=\${encodeURIComponent(query)}\`, {
@@ -642,7 +860,7 @@ app.get('/', (req: Request, res: Response): void => {
     }
 
     async function loadJobs() {
-      if (!authToken) await loginSupervisor();
+      await ensureAuth();
       try {
         const res = await fetch('/api/supervisor/jobs', {
           headers: { 'Authorization': 'Bearer ' + authToken }
@@ -668,8 +886,22 @@ app.get('/', (req: Request, res: Response): void => {
       }
     }
 
+    async function verifyTokenLive() {
+      const log = document.getElementById('tokenVerifyLog');
+      log.innerText = 'Calling GET /api/auth/me ...';
+      try {
+        const res = await fetch('/api/auth/me', {
+          headers: { 'Authorization': 'Bearer ' + authToken }
+        });
+        const data = await res.json();
+        log.innerText = JSON.stringify(data, null, 2);
+      } catch (err) {
+        log.innerText = 'Verification Error: ' + err.message;
+      }
+    }
+
     async function triggerSlaCheck() {
-      if (!authToken) await loginSupervisor();
+      await ensureAuth();
       try {
         const res = await fetch('/api/supervisor/sla/check', {
           method: 'POST',
@@ -683,15 +915,25 @@ app.get('/', (req: Request, res: Response): void => {
       }
     }
 
-    // Initialize on load
-    loginSupervisor();
+    // Default initialization
+    if (!authToken) {
+      quickLogin('service@lawncraft.com', 'Supervisor@12345!');
+    } else {
+      refreshDashboard();
+    }
   </script>
 </body>
 </html>`);
+}
+
+// Routes serving the HTML UI
+app.get(['/', '/supervisor', '/portal', '/dashboard'], (req: Request, res: Response): void => {
+  if (req.accepts('html') && !req.accepts('json')) {
+    renderPortalHtml(req, res);
     return;
   }
 
-  // Default JSON response
+  // Default JSON response for API consumers
   res.json({
     service: 'LawnCraft Supervisor & Dispatch API',
     status: 'ok',
@@ -701,6 +943,7 @@ app.get('/', (req: Request, res: Response): void => {
       consumer_quotes: '/api/quotes',
       supervisor_api: '/api/supervisor/*',
       auth_api: '/api/auth/*',
+      firebase_config: '/api/firebase-config',
       health_live: '/health/live',
       health_ready: '/health/ready',
     },

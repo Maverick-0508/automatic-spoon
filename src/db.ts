@@ -51,6 +51,17 @@ export class InMemoryDatabase {
         updatedAt: isoNow,
       },
       {
+        id: 'u-user-primary',
+        email: 'stunningwaddle@gmail.com',
+        fullName: 'Primary Supervisor',
+        hashedPassword: hashSync('Supervisor@12345!'),
+        role: 'supervisor',
+        isActive: true,
+        phone: '+1 (555) 999-0000',
+        createdAt: isoNow,
+        updatedAt: isoNow,
+      },
+      {
         id: 'u-admin-1',
         email: 'admin@lawncraft.com',
         fullName: 'Admin User',
