@@ -1,0 +1,6 @@
+{
+  "name": "LawnCraft Supervisor API",
+  "description": "Backend supervisor and admin service for LawnCraft website",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
